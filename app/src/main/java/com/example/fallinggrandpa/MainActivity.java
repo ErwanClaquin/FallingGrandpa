@@ -23,6 +23,7 @@ import android.location.Location;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.SmsManager;
 import android.util.Log;
@@ -34,6 +35,9 @@ import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.OnSuccessListener;
 
@@ -62,7 +66,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private SensorManager mSensorManager;
     private Sensor mAccelerometer;
     private NotificationHelper notifHelp;
-    double criticalValue = 15;
+    private LocationRequest locationRequest;
+    private LocationCallback locationCallback;
+    double criticalValue = 20;
     private static final int TIME_CLOSE = 10000; // Ms
     private double latitude = 10;
     private double longitude;
@@ -79,6 +85,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         }
         mAccelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        createLocationRequest();
+        locationCallback = new LocationCallback(){
+          @Override
+          public void onLocationResult(LocationResult locationResult)
+          {
+              if(locationResult == null)
+              {
+                  Log.v(TAGPerm, "location == null, failed to update");
+              }
+              for(Location location : locationResult.getLocations())
+              {
+                  latitude = location.getLatitude();
+                  longitude = location.getLongitude();
+                  Log.v(TAGPerm, "Position updated Latitude : " + latitude + "][Longitude : " + longitude);
+              }
+          }
+        };
         authorizeLocation();
         askPermissionAndSendSMS();
         try {
@@ -96,6 +119,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         } catch (JSONException | IOException e) {
             e.printStackTrace();
         }
+    }
+
+
+    protected void createLocationRequest() {
+        locationRequest = LocationRequest.create();
+        locationRequest.setInterval(10000);
+        locationRequest.setFastestInterval(5000);
+        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
     }
 
     private void sensorDetection() {
@@ -119,6 +150,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             //Permission Granted
             final FusedLocationProviderClient mFusedLoactionClient = LocationServices.getFusedLocationProviderClient(MainActivity.this);
             mFusedLoactionClient.getLocationAvailability();
+
+            mFusedLoactionClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
+
+
             mFusedLoactionClient.getLastLocation()
                     .addOnSuccessListener(MainActivity.this, new OnSuccessListener<Location>() {
                                 @SuppressLint("MissingPermission")
