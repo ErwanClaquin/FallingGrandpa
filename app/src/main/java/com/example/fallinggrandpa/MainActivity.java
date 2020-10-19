@@ -24,12 +24,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.telephony.PhoneNumberUtils;
+import android.telephony.SmsManager;
 import android.util.Log;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
@@ -52,6 +54,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private static final String TAGNOTIF = "Notif";
     private static final int REQUEST_CODE_LOCATION = 1;
     private static final String FILE_NAME = "save.json";
+    private static final int MY_PERMISSION_REQUEST_CODE_SEND_SMS = 2;
     protected Button btnAddNumber;
     final String TAGSensor = " sensor ";
     final String TAGSMS = "Sms";
@@ -77,6 +80,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
         mAccelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         authorizeLocation();
+        askPermissionAndSendSMS();
         try {
             readData();
         } catch (JSONException | IOException e) {
@@ -139,7 +143,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     private void authorizeLocation() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             {
                 //Do nothing, already authorize
                 Log.v(TAGPerm, "Already authorize");
@@ -168,19 +172,59 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     .show();
         } else {
             //Ask for permission.
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_CODE_LOCATION);
+            this.requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_CODE_LOCATION);
+        }
+    }
+
+    private void askPermissionAndSendSMS() {
+
+        // With Android Level >= 23, you have to ask the user
+        // for permission to send SMS.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) { // 23
+
+            // Check if we have send SMS permission
+            int sendSmsPermisson = ActivityCompat.checkSelfPermission(this,
+                    Manifest.permission.SEND_SMS);
+
+            if (sendSmsPermisson != PackageManager.PERMISSION_GRANTED) {
+                // If don't have permission so prompt the user.
+                this.requestPermissions(
+                        new String[]{Manifest.permission.SEND_SMS},
+                        MY_PERMISSION_REQUEST_CODE_SEND_SMS
+                );
+            }
         }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_CODE_LOCATION) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.v(TAGPerm, "REQUEST_CODE_LOCATION granted.");
-            } else {
-                Log.v(TAGPerm, "REQUEST_CODE_LOCATION not granted.");
+        switch (requestCode) {
+            case REQUEST_CODE_LOCATION: {
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Log.v(TAGPerm, "REQUEST_CODE_LOCATION granted.");
+                } else {
+                    Log.v(TAGPerm, "REQUEST_CODE_LOCATION not granted.");
+                }
+                break;
             }
+            case MY_PERMISSION_REQUEST_CODE_SEND_SMS: {
+                if (grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+                    Log.i(TAGPerm, "Permission granted!");
+                    Toast.makeText(this, "Permission granted!", Toast.LENGTH_LONG).show();
+
+
+                }
+                // Cancelled or denied.
+                else {
+                    Log.i(TAGPerm, "Permission denied!");
+                    Toast.makeText(this, "Permission denied!", Toast.LENGTH_LONG).show();
+                }
+                break;
+            }
+
         }
     }
 
@@ -249,8 +293,29 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             Geocoder geocoder = new Geocoder(this, Locale.getDefault());
             List<Address> addresses = geocoder.getFromLocation(latitude, longitude, 1);
             String address = addresses.get(0).getAddressLine(0);
+            String message = "Envois automatique de message :\nIl semblerait que je sois tombé à l'adresse " + address + ". Je vous demande votre aide.";
+            try {
+                // Get the default instance of the SmsManager
+                SmsManager smsManager = SmsManager.getDefault();
+                // Send Message
+                smsManager.sendTextMessage(number,
+                        null,
+                        message,
+                        null,
+                        null);
 
-            Log.v(TAGSMS, "Data would be : " + address + "\n");
+                Log.i( TAGNOTIF,"Your sms has successfully sent!");
+                Toast.makeText(getApplicationContext(),"Your sms has successfully sent!",
+                        Toast.LENGTH_LONG).show();
+            } catch (Exception ex) {
+                Log.e( TAGNOTIF,"Your sms has failed...", ex);
+                Toast.makeText(getApplicationContext(),"Your sms has failed... " + ex.getMessage(),
+                        Toast.LENGTH_LONG).show();
+                ex.printStackTrace();
+            }
+
+
+            Log.v(TAGSMS, "Adress would be : " + address + "\n");
 
         } else {
             Log.v(TAGNOTIF, "Not a valid number : " + number);
@@ -271,9 +336,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             String phone = edit.getText().toString();
             if (validPhoneNumber(phone)) {
                 JSONObject jsonObject = new JSONObject();
-                jsonObject.put("Saved phone", phone);
+                jsonObject.put("phone", phone);
                 buffW.write(jsonObject.toString());
                 buffW.write(",");
+                Log.v(TAGNOTIF, "Phone : "+ phone);
             }
         }
         buffW.close();
@@ -285,6 +351,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         BufferedReader buffR = new BufferedReader(fileR);
         StringBuilder sbuild = new StringBuilder();
         String line = buffR.readLine();
+        Log.v(TAGNOTIF, "line : "+ line);
         while (line != null) {
             sbuild.append(line);
             line = buffR.readLine();
